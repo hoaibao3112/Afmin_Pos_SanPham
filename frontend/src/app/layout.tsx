@@ -29,6 +29,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.addEventListener('error', function(e) {
+                if (e.message && (e.message.indexOf('Loading chunk') !== -1 || e.message.indexOf('ChunkLoadError') !== -1)) {
+                  if (!sessionStorage.getItem('chunk_reload_lock')) {
+                    sessionStorage.setItem('chunk_reload_lock', 'true');
+                    window.location.reload();
+                  }
+                }
+              });
+              window.addEventListener('load', function() {
+                sessionStorage.removeItem('chunk_reload_lock');
+              });
+            `,
+          }}
+        />
+      </head>
       <body className="bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100 min-h-screen">
         <Navbar />
         {/* Nội dung trang với khoảng cách đệm an toàn dưới chân cho BottomNav trên iPhone */}

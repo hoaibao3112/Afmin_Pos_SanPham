@@ -233,33 +233,8 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Header gọn gàng */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 dark:bg-slate-900/95 dark:border-slate-800">
-        <div className="mx-auto max-w-4xl px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-              <Store className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-extrabold tracking-tight">Cẩm Tuyền House</h1>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                Kho hàng &amp; Giỏ hàng Messenger
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={handleOpenAdd}
-            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer"
-          >
-            <Plus className="h-4 w-4 stroke-[2.5]" />
-            <span>Thêm sản phẩm</span>
-          </button>
-        </div>
-      </header>
-
       {/* Main Container */}
-      <main className="mx-auto max-w-4xl px-4 pt-5 space-y-4">
+      <main className="mx-auto max-w-4xl px-4 pt-4 space-y-3.5">
         {/* Thanh tìm kiếm & Thống kê */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
           <div className="relative flex-1">
@@ -425,6 +400,9 @@ export default function ProductsPage() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 max-h-[92vh] flex flex-col animate-in slide-in-from-bottom-5 duration-200">
+            {/* iOS Sheet Drag Handle (cho điện thoại) */}
+            <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3 sm:hidden shrink-0" />
+
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800 shrink-0">
               <div>

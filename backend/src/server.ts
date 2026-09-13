@@ -5,8 +5,10 @@ import { env } from './config/env.js';
 import { tenantMiddleware } from './middlewares/tenant.middleware.js';
 import { errorHandler } from './middlewares/error.middleware.js';
 import productRoutes from './modules/product/product.routes.js';
+import orderRoutes from './modules/order/order.routes.js';
+import webhookRoutes from './modules/webhook/webhook.routes.js';
 import uploadRoutes from './modules/upload/upload.routes.js';
-import { prisma } from './lib/prisma.js';
+import { prisma, checkDbAvailability } from './lib/prisma.js';
 
 const app = express();
 
@@ -42,18 +44,12 @@ app.use(tenantMiddleware);
 
 // 6. Health check endpoint
 const healthHandler = async (_req: express.Request, res: express.Response) => {
-  let dbStatus = 'disconnected';
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    dbStatus = 'connected';
-  } catch (_e) {
-    dbStatus = 'unavailable';
-  }
+  const isDbReady = await checkDbAvailability();
 
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    database: dbStatus,
+    database: isDbReady ? 'connected' : 'unavailable',
     pancakeConfigured: Boolean(env.PANCAKE_SHOP_ID && env.PANCAKE_API_TOKEN),
   });
 };
@@ -63,30 +59,40 @@ app.get('/api/health', healthHandler);
 // 7. Đăng ký API routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // 8. Error handling middleware
 app.use(errorHandler);
 
 const PORT = Number(env.PORT) || 5000;
-const server = app.listen(PORT, () => {
-  console.log(`🚀 [Backend] Server đang chạy tại http://localhost:${PORT}`);
-  console.log(`📸 [Static Uploads] Phục vụ ảnh tại http://localhost:${PORT}/uploads`);
-  console.log(`📦 [Pancake Shop ID]: ${env.PANCAKE_SHOP_ID ? env.PANCAKE_SHOP_ID : '(Chưa cấu hình)'}`);
-});
+let server: any = null;
+
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, () => {
+    console.log(`🚀 [Backend] Server đang chạy tại http://localhost:${PORT}`);
+    console.log(`📸 [Static Uploads] Phục vụ ảnh tại http://localhost:${PORT}/uploads`);
+    console.log(`📦 [Pancake Shop ID]: ${env.PANCAKE_SHOP_ID ? env.PANCAKE_SHOP_ID : '(Chưa cấu hình)'}`);
+  });
+}
 
 // 9. Graceful Shutdown
 const handleShutdown = async (signal: string) => {
   console.log(`\n🛑 Nhận tín hiệu ${signal}. Đang đóng kết nối an toàn...`);
-  server.close(async () => {
-    try {
-      await prisma.$disconnect();
-      console.log('✅ Đã ngắt kết nối Database Prisma an toàn.');
-      process.exit(0);
-    } catch (err) {
-      console.error('Lỗi khi đóng Database:', err);
-      process.exit(1);
-    }
-  });
+  if (server) {
+    server.close(async () => {
+      try {
+        await prisma.$disconnect();
+        console.log('✅ Đã ngắt kết nối Database Prisma an toàn.');
+        process.exit(0);
+      } catch (err) {
+        console.error('Lỗi khi đóng Database:', err);
+        process.exit(1);
+      }
+    });
+  } else {
+    process.exit(0);
+  }
 };
 
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));

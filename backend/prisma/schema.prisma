@@ -13,8 +13,22 @@ model Account {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   products  Product[]
+  orders    Order[]
 
   @@map("accounts")
+}
+
+enum OrderStatus {
+  PENDING     // Chờ duyệt / Mới đặt từ Messenger
+  CONFIRMED   // Đã xác nhận / Đang chuẩn bị hàng
+  SHIPPING    // Đang giao hàng
+  COMPLETED   // Đã hoàn thành
+  CANCELLED   // Đã hủy
+}
+
+enum PaymentStatus {
+  UNPAID      // Chưa thanh toán (COD)
+  PAID        // Đã thanh toán
 }
 
 model Product {
@@ -39,6 +53,62 @@ model Product {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  orderItems         OrderItem[]
+
   @@index([accountId])
   @@map("products")
+}
+
+model Order {
+  id                 String        @id @default(cuid())
+  accountId          String        // Multi-tenant isolation
+  account            Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  code               String        // Mã đơn hiển thị (VD: DH-10023)
+  customerName       String        // Tên khách hàng đặt từ Messenger
+  customerPhone      String?       // Số điện thoại nhận hàng
+  customerAddress    String?       // Địa chỉ giao hàng
+  customerNote       String?       // Ghi chú của khách
+
+  status             OrderStatus   @default(PENDING)
+  paymentStatus      PaymentStatus @default(UNPAID)
+  paymentMethod      String?       @default("COD") // COD, CHUYEN_KHOAN
+
+  subtotal           Decimal       @db.Decimal(12, 2) // Tiền hàng
+  shippingFee        Decimal       @default(0) @db.Decimal(12, 2) // Phí ship
+  discount           Decimal       @default(0) @db.Decimal(12, 2) // Giảm giá
+  totalAmount        Decimal       @db.Decimal(12, 2) // Tổng thanh toán
+
+  pancakeOrderId     String?       // ID đơn trên Pancake POS
+  source             String        @default("MESSENGER") // MESSENGER, POS, MANUAL
+
+  items              OrderItem[]
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([accountId])
+  @@index([pancakeOrderId])
+  @@index([code])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId    String?
+  product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  productName  String   // Tên sản phẩm tại thời điểm đặt
+  productImage String?  // Ảnh sản phẩm
+  quantity     Int      @default(1)
+  price        Decimal  @db.Decimal(12, 2) // Đơn giá
+  total        Decimal  @db.Decimal(12, 2) // Thành tiền = price * quantity
+
+  createdAt    DateTime @default(now())
+
+  @@index([orderId])
+  @@map("order_items")
 }

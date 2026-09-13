@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id        String    @id @default(cuid())
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("accounts")
+}
+
+model Product {
+  id                 String   @id @default(cuid())
+  accountId          String   // Multi-tenant isolation
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // ĐỦ 6 TIÊU CHUẨN VÀNG CỦA META FACEBOOK SHOPPING:
+  name               String   // 1. Tên sản phẩm
+  category           String   @default("Mặc định") // 2. Danh mục
+  description        String?  // 3. Mô tả tiếng Việt
+  price              Decimal  @db.Decimal(12, 2)   // 4. Giá bán (> 0đ)
+  stock              Int      @default(10)         // 5. Tồn kho (> 0)
+  imageUrl           String?  // 6. Ảnh sản phẩm chuẩn vuông Meta (>= 500x500)
+
+  // Mã định danh Pancake POS & Facebook
+  sku                String?
+  pancakeProductId   String?
+  pancakeVariationId String?
+  isSyncedToPos      Boolean  @default(false)
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([accountId])
+  @@map("products")
+}

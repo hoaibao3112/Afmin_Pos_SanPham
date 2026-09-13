@@ -1,0 +1,95 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'node:path';
+import { env } from './config/env.js';
+import { tenantMiddleware } from './middlewares/tenant.middleware.js';
+import { errorHandler } from './middlewares/error.middleware.js';
+import productRoutes from './modules/product/product.routes.js';
+import uploadRoutes from './modules/upload/upload.routes.js';
+import { prisma } from './lib/prisma.js';
+
+const app = express();
+
+// 1. Cấu hình CORS
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-account-id'],
+}));
+
+// 2. Body Parser dung lượng cao
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// 3. Phục vụ thư mục ảnh tĩnh /uploads
+const uploadDir = path.resolve(process.cwd(), 'public/uploads');
+app.use('/uploads', express.static(uploadDir));
+
+// 4. Middleware đo thời gian phản hồi
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[${req.method}] ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
+    }
+  });
+  next();
+});
+
+// 5. Gắn Multi-tenant context (accountId)
+app.use(tenantMiddleware);
+
+// 6. Health check endpoint
+const healthHandler = async (_req: express.Request, res: express.Response) => {
+  let dbStatus = 'disconnected';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'connected';
+  } catch (_e) {
+    dbStatus = 'unavailable';
+  }
+
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: dbStatus,
+    pancakeConfigured: Boolean(env.PANCAKE_SHOP_ID && env.PANCAKE_API_TOKEN),
+  });
+};
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
+
+// 7. Đăng ký API routes
+app.use('/api/upload', uploadRoutes);
+app.use('/api/products', productRoutes);
+
+// 8. Error handling middleware
+app.use(errorHandler);
+
+const PORT = Number(env.PORT) || 5000;
+const server = app.listen(PORT, () => {
+  console.log(`🚀 [Backend] Server đang chạy tại http://localhost:${PORT}`);
+  console.log(`📸 [Static Uploads] Phục vụ ảnh tại http://localhost:${PORT}/uploads`);
+  console.log(`📦 [Pancake Shop ID]: ${env.PANCAKE_SHOP_ID ? env.PANCAKE_SHOP_ID : '(Chưa cấu hình)'}`);
+});
+
+// 9. Graceful Shutdown
+const handleShutdown = async (signal: string) => {
+  console.log(`\n🛑 Nhận tín hiệu ${signal}. Đang đóng kết nối an toàn...`);
+  server.close(async () => {
+    try {
+      await prisma.$disconnect();
+      console.log('✅ Đã ngắt kết nối Database Prisma an toàn.');
+      process.exit(0);
+    } catch (err) {
+      console.error('Lỗi khi đóng Database:', err);
+      process.exit(1);
+    }
+  });
+};
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+
+export default app;

@@ -147,7 +147,7 @@ export default function OrderDetailPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="h-9 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+              className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition"
             >
               <Printer className="h-3.5 w-3.5" />
               <span>In Hóa Đơn</span>
@@ -156,12 +156,36 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
+      {/* CSS chuyên dụng cho máy in nhiệt (Khổ K80 80mm & K58 58mm) */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: 80mm auto;
+            margin: 2mm 3mm;
+          }
+          body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .thermal-bill {
+            width: 100% !important;
+            max-width: 76mm !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+        }
+      `}} />
+
       {/* TỜ HÓA ĐƠN BÁN LẺ (RETAIL INVOICE CONTAINER) */}
-      <main className="mx-auto max-w-2xl px-4 pt-5">
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm print:border-none print:shadow-none print:p-0">
+      <main className="mx-auto max-w-2xl px-4 pt-5 print:p-0 print:m-0">
+        <div className="thermal-bill bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm print:border-none print:shadow-none print:p-0">
           {/* 1. Header Bill */}
           <div className="text-center border-b border-dashed border-slate-200 dark:border-slate-800 pb-5">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-xs mb-2">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-xs mb-2 print:hidden">
               <Store className="h-6 w-6" />
             </div>
             <h1 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">

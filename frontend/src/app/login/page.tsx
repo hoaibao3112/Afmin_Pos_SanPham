@@ -218,13 +218,10 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Ghi chú mã PIN & bảo mật */}
-        <div className="text-center mt-5 space-y-1">
-          <p className="text-xs text-slate-600 font-medium">
-            Mã PIN: <span className="font-mono font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200">123123</span>
-          </p>
-          <p className="text-[11px] text-slate-400 font-medium">
-            Khóa an toàn phiên làm việc 7 ngày • Cẩm Tuyền House Admin
+        {/* Bản quyền & bảo mật */}
+        <div className="text-center mt-6">
+          <p className="text-[11px] text-slate-400 font-medium tracking-wide">
+            © Cẩm Tuyền House • Hệ Thống Quản Trị Bảo Mật
           </p>
         </div>
       </div>

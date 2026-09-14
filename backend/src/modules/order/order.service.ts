@@ -17,80 +17,8 @@ function calculateOrderTotals(
   return { subtotal, totalAmount };
 }
 
-// Bộ nhớ dự phòng In-Memory khi CSDL PostgreSQL chưa kết nối
-let inMemoryOrders: any[] = [
-  {
-    id: 'ord_10023',
-    accountId: 'acc_default',
-    code: 'DH-10023',
-    customerName: 'Nguyễn Thị Mai',
-    customerPhone: '0918234567',
-    customerAddress: '124 Đường 30/4, Phường 1, TX. Cai Lậy, Tiền Giang',
-    customerNote: 'Giao buổi sáng giúp em, gọi trước khi giao',
-    status: 'PENDING',
-    paymentStatus: 'UNPAID',
-    paymentMethod: 'COD',
-    subtotal: 510000,
-    shippingFee: 0,
-    discount: 0,
-    totalAmount: 510000,
-    source: 'MESSENGER',
-    pancakeOrderId: 'pos_ord_9821',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    items: [
-      {
-        id: 'item_1',
-        orderId: 'ord_10023',
-        productName: 'Lạp Xưởng Tôm Cai Lậy (Loại 1)',
-        productImage: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=500&auto=format&fit=crop&q=80',
-        quantity: 2,
-        price: 180000,
-        total: 360000,
-      },
-      {
-        id: 'item_2',
-        orderId: 'ord_10023',
-        productName: 'Hồng Mật Fuji Giòn Ngọt',
-        productImage: 'https://images.unsplash.com/photo-1577003833174-0498b8577771?w=500&auto=format&fit=crop&q=80',
-        quantity: 1,
-        price: 150000,
-        total: 150000,
-      },
-    ],
-  },
-  {
-    id: 'ord_10022',
-    accountId: 'acc_default',
-    code: 'DH-10022',
-    customerName: 'Trần Văn Hoàng',
-    customerPhone: '0903888999',
-    customerAddress: 'Ấp Bình Phú, Xã Bình Phú, Huyện Cai Lậy, Tiền Giang',
-    customerNote: 'Đóng gói thùng xốp cẩn thận giúp shop',
-    status: 'CONFIRMED',
-    paymentStatus: 'PAID',
-    paymentMethod: 'CHUYEN_KHOAN',
-    subtotal: 280000,
-    shippingFee: 20000,
-    discount: 0,
-    totalAmount: 300000,
-    source: 'MESSENGER',
-    pancakeOrderId: 'pos_ord_9820',
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    items: [
-      {
-        id: 'item_3',
-        orderId: 'ord_10022',
-        productName: 'Sầu Riêng Ri6 Cơm Vàng Hạt Lép',
-        productImage: 'https://images.unsplash.com/photo-1587132137056-bfbf0166836e?w=500&auto=format&fit=crop&q=80',
-        quantity: 1,
-        price: 280000,
-        total: 280000,
-      },
-    ],
-  },
-];
+// Danh sách đơn hàng (chỉ nhận từ Pancake POS qua Webhook / Sync API hoặc tạo mới, KHÔNG dùng mock data set cứng)
+let inMemoryOrders: any[] = [];
 
 /**
  * Lấy danh sách đơn hàng (kèm bộ lọc trạng thái, tìm kiếm, thống kê)

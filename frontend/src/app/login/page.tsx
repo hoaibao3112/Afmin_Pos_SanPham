@@ -108,8 +108,13 @@ export default function LoginPage() {
       <div className="relative w-full max-w-sm flex flex-col items-center z-10">
         {/* Logo & Tên Shop */}
         <div className="flex flex-col items-center text-center mb-5">
-          <div className="h-16 w-16 rounded-2xl bg-linear-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/25 ring-4 ring-emerald-100 mb-3 transition-transform hover:scale-105">
-            <Store className="h-8 w-8 text-white stroke-[2.3]" />
+          <div className="relative h-24 w-24 rounded-full overflow-hidden shadow-xl shadow-amber-500/20 ring-4 ring-white border-2 border-amber-200/90 mb-3.5 transition-transform hover:scale-105 bg-amber-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.jpg"
+              alt="Logo Cẩm Tuyền House"
+              className="h-full w-full object-cover"
+            />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">
             Cẩm Tuyền House

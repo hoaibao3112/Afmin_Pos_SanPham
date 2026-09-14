@@ -6,6 +6,10 @@ import BottomNav from '@/components/BottomNav';
 export const metadata: Metadata = {
   title: 'Cẩm Tuyền House - Quản Lý Kho & Đơn Hàng',
   description: 'Quản lý sản phẩm và đồng bộ tự động Pancake POS & Giỏ hàng Messenger',
+  icons: {
+    icon: '/logo.jpg',
+    apple: '/logo.jpg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

@@ -28,8 +28,13 @@ export default function Navbar() {
       <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4">
         {/* Brand */}
         <Link href="/products" className="flex items-center gap-2.5 font-bold tracking-tight text-slate-900 dark:text-white">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
-            <Store className="h-5 w-5" />
+          <div className="relative h-10 w-10 shrink-0 rounded-full overflow-hidden shadow-xs ring-2 ring-emerald-500/30 bg-amber-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.jpg"
+              alt="Logo Cẩm Tuyền House"
+              className="h-full w-full object-cover"
+            />
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-extrabold tracking-tight">CẨM TUYỀN HOUSE</span>

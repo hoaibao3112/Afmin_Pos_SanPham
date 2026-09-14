@@ -18,7 +18,7 @@ export function getAccountId(): string {
   const store = asyncLocalStorage.getStore();
   if (!store || !store.accountId) {
     // Giá trị default cho môi trường dev/local nếu chưa cấu hình header
-    return process.env.DEFAULT_ACCOUNT_ID || 'default-account';
+    return process.env.DEFAULT_ACCOUNT_ID || 'acc_default';
   }
   return store.accountId;
 }

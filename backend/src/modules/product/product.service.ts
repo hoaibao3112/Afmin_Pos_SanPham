@@ -1,10 +1,8 @@
-import { prisma, checkDbAvailability } from '../../lib/prisma.js';
+import { prisma, checkDbAvailability, ensureAccountExists } from '../../lib/prisma.js';
 import { getAccountId } from '../../lib/context.js';
 import { env } from '../../config/env.js';
 import { CreateProductInput, UpdateProductInput } from './product.schema.js';
 import { pushProductToPancake, updateProductOnPancake, pullProductsFromPancake } from '../pancake/pancake.service.js';
-import { MOCK_PRODUCTS } from '../../data/mock-data.js';
-
 import { Product } from '@prisma/client';
 
 export interface InMemoryProduct {
@@ -26,12 +24,19 @@ export interface InMemoryProduct {
 
 export type ProductItem = Product | InMemoryProduct;
 
-// Danh sách sản phẩm khởi tạo từ file mock data để test chức năng trước khi có key POS
-let inMemoryProducts: InMemoryProduct[] = [...MOCK_PRODUCTS];
+// Danh sách sản phẩm lưu trữ bộ nhớ khi chưa có DB
+let inMemoryProducts: InMemoryProduct[] = [];
 
-export function resetMockProducts() {
-  inMemoryProducts = [...MOCK_PRODUCTS];
-  return inMemoryProducts;
+// === Cache-Aside Pattern: TTL 60s, invalidate on CRUD ===
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+const productListCache = new Map<string, CacheEntry<ProductItem[]>>();
+const CACHE_TTL_MS = 60_000; // 60 giây
+
+export function invalidateProductCache(accountId: string) {
+  productListCache.delete(`products:${accountId}`);
 }
 
 export function clearMockProducts() {
@@ -41,21 +46,47 @@ export function clearMockProducts() {
 
 /**
  * Lấy danh sách sản phẩm theo accountId (Multi-tenant)
+ * Tự động đồng bộ từ Pancake POS khi khởi động lần đầu
  */
 export async function listProducts() {
   const accountId = getAccountId();
+
+  // 1. Kiểm tra cache (sub-millisecond)
+  const cacheKey = `products:${accountId}`;
+  const cached = productListCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data;
+  }
+
+  // 2. Query DB nếu cache miss
   const isDbReady = await checkDbAvailability();
 
   if (isDbReady) {
     try {
-      return await prisma.product.findMany({
+      const dbProducts = await prisma.product.findMany({
         where: { accountId },
         orderBy: { createdAt: 'desc' },
       });
+      if (dbProducts.length > 0) {
+        productListCache.set(cacheKey, {
+          data: dbProducts,
+          expiresAt: Date.now() + CACHE_TTL_MS,
+        });
+        return dbProducts;
+      }
     } catch (_err) {}
   }
 
-  return inMemoryProducts.filter((p) => p.accountId === accountId || p.accountId === 'acc_default');
+  // Nếu bộ nhớ trống và đã có kết nối Pancake POS, tự động đồng bộ sản phẩm thực về
+  if (inMemoryProducts.length === 0 && env.PANCAKE_SHOP_ID && env.PANCAKE_API_TOKEN) {
+    try {
+      await syncProductsFromPancake();
+    } catch (syncErr) {
+      console.warn('⚠️ Lỗi tự động kéo sản phẩm thực từ Pancake POS:', syncErr);
+    }
+  }
+
+  return inMemoryProducts.filter((p) => !p.accountId || p.accountId === accountId || p.accountId === 'acc_default' || p.accountId === 'default-account');
 }
 
 /**
@@ -91,11 +122,7 @@ export async function createProduct(data: CreateProductInput) {
 
   if (isDbReady) {
     try {
-      await prisma.account.upsert({
-        where: { id: accountId },
-        update: {},
-        create: { id: accountId, name: `Cửa hàng (${accountId})` },
-      });
+      await ensureAccountExists(accountId);
 
       newProduct = await prisma.product.create({
         data: {
@@ -130,6 +157,9 @@ export async function createProduct(data: CreateProductInput) {
     };
     inMemoryProducts.unshift(newProduct);
   }
+
+  // Invalidate cache ngay sau khi tạo mới
+  invalidateProductCache(accountId);
 
   // 2. Tự động gọi API đẩy sang Pancake POS (Không làm gián đoạn nếu mạng lỗi)
   try {
@@ -209,6 +239,9 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
     } catch (_e) {}
   }
 
+  // Invalidate cache khi cập nhật
+  invalidateProductCache(accountId);
+
   // In-memory fallback
   const mem = inMemoryProducts.find((p) => p.id === id);
   if (!mem) {
@@ -222,6 +255,24 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
   if (data.stock !== undefined) mem.stock = data.stock;
   if (data.imageUrl !== undefined) mem.imageUrl = data.imageUrl;
   mem.updatedAt = new Date().toISOString();
+
+  // Luôn đồng bộ ngay lập tức sang Pancake POS
+  if (mem.pancakeProductId) {
+    try {
+      await updateProductOnPancake(
+        mem.pancakeProductId,
+        mem.pancakeVariationId || undefined,
+        {
+          name: data.name,
+          description: data.description,
+          price: data.price !== undefined ? Number(data.price) : undefined,
+          stock: data.stock,
+        }
+      );
+    } catch (err) {
+      console.warn('⚠️ Cập nhật sang Pancake POS thất bại:', err);
+    }
+  }
 
   return mem;
 }
@@ -258,6 +309,9 @@ export async function updateStock(id: string, stock: number) {
     } catch (_e) {}
   }
 
+  // Invalidate cache khi cập nhật tồn kho
+  invalidateProductCache(accountId);
+
   // In-memory fallback
   const mem = inMemoryProducts.find((p) => p.id === id);
   if (!mem) {
@@ -266,6 +320,19 @@ export async function updateStock(id: string, stock: number) {
 
   mem.stock = Math.max(0, stock);
   mem.updatedAt = new Date().toISOString();
+
+  if (mem.pancakeProductId) {
+    try {
+      await updateProductOnPancake(
+        mem.pancakeProductId,
+        mem.pancakeVariationId || undefined,
+        { stock: Math.max(0, stock) }
+      );
+    } catch (err) {
+      console.warn('⚠️ Cập nhật tồn kho sang Pancake POS thất bại:', err);
+    }
+  }
+
   return mem;
 }
 
@@ -324,6 +391,7 @@ export async function deleteProduct(id: string) {
         await prisma.product.delete({
           where: { id, accountId },
         });
+        invalidateProductCache(accountId);
         return { success: true, message: 'Đã xóa sản phẩm thành công' };
       }
     } catch (_e) {}
@@ -335,6 +403,7 @@ export async function deleteProduct(id: string) {
   }
 
   inMemoryProducts.splice(idx, 1);
+  invalidateProductCache(accountId);
   return { success: true, message: 'Đã xóa sản phẩm thành công' };
 }
 
@@ -347,12 +416,10 @@ export async function syncProductsFromPancake() {
   const token = env.PANCAKE_API_TOKEN;
 
   if (!shopId || !token) {
-    // Khi người dùng chưa có Key POS thật, nạp lại danh sách mẫu để trải nghiệm test mượt mà, không văng lỗi 500
-    inMemoryProducts = [...MOCK_PRODUCTS];
     return {
-      success: true,
-      message: 'Chưa cấu hình Key POS: Đã nạp thành công 6 sản phẩm mẫu để bạn test chức năng!',
-      count: MOCK_PRODUCTS.length,
+      success: false,
+      message: 'Chưa cấu hình PANCAKE_SHOP_ID hoặc PANCAKE_API_TOKEN trong .env',
+      count: 0,
     };
   }
 
@@ -361,31 +428,44 @@ export async function syncProductsFromPancake() {
   const isDbReady = await checkDbAvailability();
   let syncedCount = 0;
 
+  // Batch pre-fetch existing products to eliminate N+1 DB queries
+  const existingDbByVariation = new Map<string, { id: string; imageUrl: string | null }>();
+  const existingDbBySku = new Map<string, { id: string; imageUrl: string | null }>();
+
+  if (isDbReady) {
+    try {
+      const existingDbProducts = await prisma.product.findMany({
+        where: { accountId },
+        select: { id: true, sku: true, pancakeVariationId: true, imageUrl: true },
+      });
+      for (const p of existingDbProducts) {
+        if (p.pancakeVariationId) existingDbByVariation.set(p.pancakeVariationId, { id: p.id, imageUrl: p.imageUrl });
+        if (p.sku) existingDbBySku.set(p.sku, { id: p.id, imageUrl: p.imageUrl });
+      }
+    } catch (_err) {}
+  }
+
   for (const raw of rawProducts) {
     try {
       const baseName = raw.name || raw.title || 'Sản phẩm Pancake';
-      const description = raw.description || '';
-      const category = raw.category_name || raw.category?.name || 'Mặc định';
+      const description = (raw as any).note_product || raw.description || '';
+      const category = ((raw as any).categories && (raw as any).categories[0]?.name) || raw.category_name || raw.category?.name || 'Nông sản';
       const variations = (raw.variations && raw.variations.length > 0) ? raw.variations : [{}];
 
       for (const v of variations) {
         const varName = v.name || v.title || '';
         const name = varName && varName !== baseName ? `${baseName} - ${varName}` : baseName;
-        const price = Number(v.retail_price ?? raw.retail_price ?? raw.price ?? 0);
-        const stock = Number(v.remain_quantity ?? v.stock ?? raw.stock ?? 10);
-        const sku = v.sku || v.display_id || raw.display_id || raw.sku || `POS-${raw.id}${v.id ? `-${v.id}` : ''}`;
+        const price = Number(v.retail_price ?? (v as any).price_at_counter ?? raw.retail_price ?? raw.price ?? 0);
+        const stock = Number(v.remain_quantity ?? (v as any).total_quantity ?? v.stock ?? raw.stock ?? 0);
+        const sku = String(v.display_id || (raw as any).custom_id || v.sku || raw.display_id || `SP-${raw.id}`);
         const pancakeProductId = String(raw.id || '');
         const pancakeVariationId = String(v.id || '');
-        const imageUrl = (v.images && v.images[0]) || raw.images?.[0] || null;
+        const imageUrl = (v.images && v.images[0]) || (raw as any).image || raw.images?.[0] || null;
 
         if (isDbReady) {
           try {
-            const existing = await prisma.product.findFirst({
-              where: {
-                accountId,
-                OR: [{ pancakeVariationId }, { sku }],
-              },
-            });
+            const existing = (pancakeVariationId ? existingDbByVariation.get(pancakeVariationId) : undefined)
+              || (sku ? existingDbBySku.get(sku) : undefined);
 
             if (existing) {
               await prisma.product.update({
@@ -403,7 +483,7 @@ export async function syncProductsFromPancake() {
                 },
               });
             } else {
-              await prisma.product.create({
+              const created = await prisma.product.create({
                 data: {
                   accountId,
                   name,
@@ -418,6 +498,9 @@ export async function syncProductsFromPancake() {
                   isSyncedToPos: true,
                 },
               });
+              const entry = { id: created.id, imageUrl: created.imageUrl };
+              if (pancakeVariationId) existingDbByVariation.set(pancakeVariationId, entry);
+              if (sku) existingDbBySku.set(sku, entry);
             }
             syncedCount++;
             continue;
@@ -462,6 +545,9 @@ export async function syncProductsFromPancake() {
       console.warn('⚠️ Lỗi khi đồng bộ 1 sản phẩm từ POS:', itemErr);
     }
   }
+
+  // Invalidate cache sau khi sync xong
+  invalidateProductCache(accountId);
 
   return {
     success: true,

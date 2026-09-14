@@ -1,9 +1,8 @@
-import { prisma, checkDbAvailability } from '../../lib/prisma.js';
+import { prisma, checkDbAvailability, ensureAccountExists } from '../../lib/prisma.js';
 import { getAccountId } from '../../lib/context.js';
 import { env } from '../../config/env.js';
 import { CreateOrderInput, OrderQueryInput, UpdateOrderStatusInput } from './order.schema.js';
 import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
-import { MOCK_ORDERS } from '../../data/mock-data.js';
 
 export interface InMemoryOrderItem {
   id?: string;
@@ -64,7 +63,7 @@ export interface PancakeRawOrder {
   shipping_fee?: number;
   discount?: number;
   bill_code?: string;
-  status?: string;
+  status?: string | number;
   is_paid?: boolean;
 }
 
@@ -86,13 +85,8 @@ function calculateOrderTotals(
   return { subtotal, totalAmount };
 }
 
-// Danh sách đơn hàng khởi tạo từ file mock data để test chức năng trước khi có key POS
-let inMemoryOrders: InMemoryOrder[] = [...(MOCK_ORDERS as unknown as InMemoryOrder[])];
-
-export function resetMockOrders() {
-  inMemoryOrders = [...(MOCK_ORDERS as unknown as InMemoryOrder[])];
-  return inMemoryOrders;
-}
+// Danh sách đơn hàng lưu trữ bộ nhớ khi chưa có DB
+let inMemoryOrders: InMemoryOrder[] = [];
 
 export function clearMockOrders() {
   inMemoryOrders = [];
@@ -124,7 +118,7 @@ export async function listOrders(query: OrderQueryInput) {
       ];
     }
 
-    const [total, orders, pendingCount, allOrders] = await Promise.all([
+    const [total, orders, pendingCount, revenueAgg] = await Promise.all([
       prisma.order.count({ where: whereClause }),
       prisma.order.findMany({
         where: whereClause,
@@ -138,13 +132,13 @@ export async function listOrders(query: OrderQueryInput) {
       prisma.order.count({
         where: { accountId, status: 'PENDING' },
       }),
-      prisma.order.findMany({
+      prisma.order.aggregate({
         where: { accountId, status: { not: 'CANCELLED' } },
-        select: { totalAmount: true },
+        _sum: { totalAmount: true },
       }),
     ]);
 
-    const totalRevenue = allOrders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
+    const totalRevenue = Number(revenueAgg._sum.totalAmount ?? 0);
 
     return {
       items: orders,
@@ -161,6 +155,16 @@ export async function listOrders(query: OrderQueryInput) {
     };
   } catch (_e) {
     console.warn('⚠️ CSDL chưa kết nối, sử dụng bộ nhớ dự phòng In-memory cho Đơn hàng.');
+
+    // Nếu bộ nhớ đơn trống và đã cấu hình Pancake, tự động nạp đơn hàng thật về
+    if (inMemoryOrders.length === 0 && env.PANCAKE_SHOP_ID && env.PANCAKE_API_TOKEN) {
+      try {
+        await syncOrdersFromPancake();
+      } catch (syncErr) {
+        console.warn('⚠️ Lỗi tự động kéo đơn thực từ Pancake POS:', syncErr);
+      }
+    }
+
     let filtered = inMemoryOrders.filter((o) => o.accountId === accountId || o.accountId === 'acc_default');
 
     if (query.status && query.status !== 'ALL') {
@@ -245,11 +249,7 @@ export async function createOrder(data: CreateOrderInput) {
 
   if (isDbReady) {
     try {
-      await prisma.account.upsert({
-        where: { id: accountId },
-        update: {},
-        create: { id: accountId, name: `Cửa hàng (${accountId})` },
-      });
+      await ensureAccountExists(accountId);
 
       const order = await prisma.order.create({
       data: {
@@ -381,24 +381,29 @@ export async function ingestPancakeOrder(rawOrder: PancakeRawOrder) {
     'Khách hàng Messenger';
   const customerPhone =
     rawOrder.bill_phone_number ||
+    ((rawOrder.customer as any)?.phone_numbers && (rawOrder.customer as any).phone_numbers[0]) ||
     rawOrder.customer?.phone_number ||
     rawOrder.shipping_address?.phone_number ||
     null;
   const customerAddress =
     rawOrder.shipping_address?.full_address ||
+    ((rawOrder.customer as any)?.shop_customer_addresses && (rawOrder.customer as any).shop_customer_addresses[0]?.full_address) ||
     rawOrder.shipping_address?.address ||
     rawOrder.customer?.address ||
     null;
   const customerNote = rawOrder.customer_note || rawOrder.note || null;
 
   // Lấy danh sách mặt hàng
-  const rawItems: PancakeRawItem[] = rawOrder.items || rawOrder.order_items || rawOrder.variations || [];
-  const items: InMemoryOrderItem[] = rawItems.map((item: PancakeRawItem) => {
+  const rawItems: any[] = (rawOrder as any).items || (rawOrder as any).order_items || (rawOrder as any).variations || [];
+  const items: InMemoryOrderItem[] = rawItems.map((item: any) => {
     const quantity = Math.max(1, Number(item.quantity || 1));
-    const price = Number(item.price || item.retail_price || 0);
+    const varInfo = item.variation_info || {};
+    const price = Number(item.price || item.retail_price || varInfo.retail_price || 0);
+    const productName = item.product_name || item.name || varInfo.name || 'Sản phẩm';
+    const productImage = item.avatar_url || item.image_url || (varInfo.images && varInfo.images[0]) || null;
     return {
-      productName: item.product_name || item.name || 'Sản phẩm',
-      productImage: item.avatar_url || item.image_url || null,
+      productName,
+      productImage,
       quantity,
       price,
       total: quantity * price,
@@ -407,9 +412,10 @@ export async function ingestPancakeOrder(rawOrder: PancakeRawOrder) {
 
   const shippingFee = Number(rawOrder.shipping_fee || 0);
   const discount = Number(rawOrder.discount || 0);
-  const { subtotal, totalAmount } = calculateOrderTotals(items, shippingFee, discount);
+  const { subtotal } = calculateOrderTotals(items, shippingFee, discount);
+  const totalAmount = Number((rawOrder as any).total_price ?? (rawOrder as any).total_price_after_sub_discount ?? Math.max(0, subtotal + shippingFee - discount));
 
-  const code = rawOrder.bill_code || `POS-${pancakeOrderId.slice(-6)}`;
+  const code = rawOrder.bill_code || (rawOrder.id ? `POS-${rawOrder.id}` : `POS-${pancakeOrderId.slice(-6)}`);
 
   // Ánh xạ trạng thái
   let status: OrderStatus = 'PENDING';
@@ -542,13 +548,11 @@ export async function syncOrdersFromPancake() {
   const token = env.PANCAKE_API_TOKEN;
 
   if (!shopId || !token) {
-    // Khi người dùng chưa có Key POS thật, nạp lại danh sách mẫu để trải nghiệm test mượt mà, không văng lỗi 500
-    inMemoryOrders = [...(MOCK_ORDERS as unknown as InMemoryOrder[])];
     return {
-      success: true,
-      totalFetched: MOCK_ORDERS.length,
-      syncedCount: MOCK_ORDERS.length,
-      message: 'Chưa cấu hình Key POS: Đã nạp thành công 4 đơn hàng mẫu để bạn test chức năng!',
+      success: false,
+      totalFetched: 0,
+      syncedCount: 0,
+      message: 'Chưa cấu hình PANCAKE_SHOP_ID hoặc PANCAKE_API_TOKEN trong .env',
     };
   }
 

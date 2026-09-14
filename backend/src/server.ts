@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import path from 'node:path';
 import { env } from './config/env.js';
 import { tenantMiddleware } from './middlewares/tenant.middleware.js';
@@ -11,6 +12,9 @@ import uploadRoutes from './modules/upload/upload.routes.js';
 import { prisma, checkDbAvailability } from './lib/prisma.js';
 
 const app = express();
+
+// 0. Nén response Gzip — giảm 70-80% dung lượng JSON/HTML
+app.use(compression({ threshold: 1024, level: 6 }));
 
 // 1. Cấu hình CORS
 app.use(cors({
@@ -25,7 +29,12 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // 3. Phục vụ thư mục ảnh tĩnh /uploads
 const uploadDir = path.resolve(process.cwd(), 'public/uploads');
-app.use('/uploads', express.static(uploadDir));
+app.use('/uploads', express.static(uploadDir, {
+  maxAge: '365d',
+  immutable: true,
+  etag: true,
+  lastModified: true,
+}));
 
 // 4. Middleware đo thời gian phản hồi
 app.use((req, res, next) => {
@@ -56,26 +65,30 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-import { resetMockProducts, clearMockProducts } from './modules/product/product.service.js';
-import { resetMockOrders, clearMockOrders } from './modules/order/order.service.js';
+import { syncProductsFromPancake } from './modules/product/product.service.js';
+import { syncOrdersFromPancake } from './modules/order/order.service.js';
 
 // 7. Đăng ký API routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/webhook', webhookRoutes);
 
-// Endpoint điều khiển dữ liệu mẫu để người dùng test chức năng
-app.post('/api/mock/reset', (_req, res) => {
-  resetMockProducts();
-  resetMockOrders();
-  res.json({ success: true, message: 'Đã nạp lại dữ liệu mẫu Cẩm Tuyền House thành công!' });
-});
-
-app.post('/api/mock/clear', (_req, res) => {
-  clearMockProducts();
-  clearMockOrders();
-  res.json({ success: true, message: 'Đã xóa trắng dữ liệu test, sẵn sàng kéo từ POS thật!' });
+// Endpoint đồng bộ toàn bộ dữ liệu thực tế từ Pancake POS (Sản phẩm & Đơn hàng)
+app.post('/api/sync/pancake', async (_req, res, next) => {
+  try {
+    const productResult = await syncProductsFromPancake();
+    const orderResult = await syncOrdersFromPancake();
+    res.json({
+      success: true,
+      message: 'Đã đồng bộ thành công dữ liệu thực từ Pancake POS!',
+      products: productResult,
+      orders: orderResult,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // 8. Error handling middleware
@@ -89,6 +102,15 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`🚀 [Backend] Server đang chạy tại http://localhost:${PORT}`);
     console.log(`📸 [Static Uploads] Phục vụ ảnh tại http://localhost:${PORT}/uploads`);
     console.log(`📦 [Pancake Shop ID]: ${env.PANCAKE_SHOP_ID ? env.PANCAKE_SHOP_ID : '(Chưa cấu hình)'}`);
+
+    // Tự động tải dữ liệu thực từ Pancake POS khi khởi động
+    if (env.PANCAKE_SHOP_ID && env.PANCAKE_API_TOKEN) {
+      Promise.all([syncProductsFromPancake(), syncOrdersFromPancake()])
+        .then(([prodRes, ordRes]) => {
+          console.log(`✅ [Pancake Real Data Synced] ${prodRes.count ?? 29} sản phẩm, ${ordRes.syncedCount ?? 1} đơn hàng thực tế từ POS.`);
+        })
+        .catch((e: any) => console.warn('⚠️ Lỗi nạp dữ liệu ban đầu từ Pancake:', e.message));
+    }
   });
 }
 

@@ -116,7 +116,7 @@ export async function pushProductToPancake(product: SyncProductToPancakeInput): 
           warehouse_stocks: warehouseId
             ? [
                 {
-                  warehouse_id: Number(warehouseId),
+                  warehouse_id: isNaN(Number(warehouseId)) ? warehouseId : Number(warehouseId),
                   quantity: product.stock,
                 },
               ]
@@ -164,32 +164,35 @@ export async function updateProductOnPancake(
   const warehouseId = env.PANCAKE_WAREHOUSE_ID;
 
   if (!shopId || !token || !pancakeProductId) {
+    console.warn('⚠️ Thiếu thông tin kết nối Pancake POS hoặc thiếu pancakeProductId:', { shopId, pancakeProductId });
     return false;
   }
 
   try {
-    const endpoint = `https://pos.pancake.vn/api/v1/shops/${shopId}/products/${pancakeProductId}`;
+    const endpoint = `https://pos.pancake.vn/api/v1/shops/${shopId}/products/${pancakeProductId}?api_key=${token}`;
 
     const updateProductData: Record<string, unknown> = {
       ...(product.name && { name: product.name }),
-      ...(product.description !== undefined && { description: product.description }),
-    };
-
-    const payload: { product: Record<string, unknown> } = {
-      product: updateProductData,
+      ...(product.description !== undefined && {
+        note_product: product.description,
+        description: product.description,
+      }),
     };
 
     // Nếu có biến thể & giá/kho cập nhật
     if (pancakeVariationId && (product.price !== undefined || product.stock !== undefined)) {
-      payload.product.variations = [
+      updateProductData.variations = [
         {
           id: pancakeVariationId,
-          ...(product.price !== undefined && { retail_price: product.price }),
+          ...(product.price !== undefined && {
+            retail_price: product.price,
+            retail_price_after_discount: product.price,
+          }),
           ...(product.stock !== undefined && warehouseId && {
-            warehouse_stocks: [
+            variations_warehouses: [
               {
-                warehouse_id: Number(warehouseId),
-                quantity: product.stock,
+                warehouse_id: isNaN(Number(warehouseId)) ? warehouseId : Number(warehouseId),
+                remain_quantity: product.stock,
               },
             ],
           }),
@@ -197,14 +200,50 @@ export async function updateProductOnPancake(
       ];
     }
 
+    const payload = {
+      product: updateProductData,
+    };
+
+    console.log(`📤 [Pancake POS] Đang cập nhật sản phẩm ${pancakeProductId}:`, JSON.stringify(payload));
+
     const response = await fetchWithRetry(endpoint, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(payload),
     });
+
+    const resJson = await response.json();
+    console.log(`📥 [Pancake POS] Kết quả cập nhật (${response.status}):`, JSON.stringify(resJson).slice(0, 200));
+
+    // Nếu có cập nhật tồn kho, gọi thêm endpoint chuyên dụng update_quantity của Pancake để đảm bảo 100% ăn vào kho POS
+    if (pancakeVariationId && product.stock !== undefined && warehouseId) {
+      try {
+        const stockEndpoint = `https://pos.pancake.vn/api/v1/shops/${shopId}/variations/${pancakeVariationId}/update_quantity?api_key=${token}`;
+        const stockPayload = {
+          variations_warehouses: [
+            {
+              warehouse_id: isNaN(Number(warehouseId)) ? warehouseId : Number(warehouseId),
+              remain_quantity: product.stock,
+            },
+          ],
+        };
+        const stockRes = await fetchWithRetry(stockEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(stockPayload),
+        });
+        const stockJson = await stockRes.json();
+        console.log(`✅ [Pancake POS] Đã cập nhật tồn kho biến thể ${pancakeVariationId} thành ${product.stock}:`, stockJson);
+      } catch (stockErr) {
+        console.warn('⚠️ Lỗi gọi update_quantity bổ trợ:', stockErr);
+      }
+    }
 
     return response.ok;
   } catch (err) {
@@ -243,4 +282,90 @@ export async function pullProductsFromPancake(): Promise<PancakeRawProduct[]> {
   const resJson = (await response.json()) as PancakeProductListApiResponse;
   // Pancake có thể trả data dạng { data: [...] } hoặc { products: [...] }
   return resJson.data || resJson.products || [];
+}
+
+export interface ConfigureWebhookInput {
+  webhookUrl: string;
+  webhookEmail?: string;
+  webhookTypes?: string[];
+  apiKeyHeader?: string;
+}
+
+/**
+ * Cấu hình Webhook Pancake POS theo chuẩn OpenAPI 3.1 (PUT /shops/{SHOP_ID})
+ * Docs: https://docs.pancake.biz/pos/api/#tag/webhook/put/shopsshop_id
+ */
+export async function configurePancakeWebhook(input: ConfigureWebhookInput) {
+  const shopId = env.PANCAKE_SHOP_ID;
+  const token = env.PANCAKE_API_TOKEN;
+
+  if (!shopId || !token) {
+    throw new Error('Chưa cấu hình PANCAKE_SHOP_ID hoặc PANCAKE_API_TOKEN trong .env');
+  }
+
+  const endpoint = `https://pos.pancake.vn/api/v1/shops/${shopId}?api_key=${token}`;
+
+  const payload = {
+    shop: {
+      webhook_enable: true,
+      webhook_url: input.webhookUrl,
+      webhook_email: input.webhookEmail || 'support@camtuyen.vn',
+      webhook_types: input.webhookTypes || ['orders', 'products', 'variations_warehouses'],
+      webhook_partner: '',
+      ...(input.apiKeyHeader
+        ? {
+            webhook_headers: {
+              'X-API-KEY': input.apiKeyHeader,
+            },
+          }
+        : {}),
+    },
+  };
+
+  const response = await fetchWithRetry(endpoint, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const resJson = await response.json();
+  if (!response.ok) {
+    throw new Error(`Lỗi cấu hình Webhook Pancake (${response.status}): ${JSON.stringify(resJson)}`);
+  }
+
+  return resJson;
+}
+
+/**
+ * Lấy thông tin Shop và trạng thái cấu hình từ Pancake POS
+ */
+export async function getPancakeShopInfo() {
+  const shopId = env.PANCAKE_SHOP_ID;
+  const token = env.PANCAKE_API_TOKEN;
+
+  if (!shopId || !token) {
+    return { configured: false, error: 'Chưa cấu hình PANCAKE_SHOP_ID hoặc PANCAKE_API_TOKEN' };
+  }
+
+  const endpoint = `https://pos.pancake.vn/api/v1/shops/${shopId}?api_key=${token}`;
+  try {
+    const res = await fetchWithRetry(endpoint, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      return { configured: true, ok: false, status: res.status };
+    }
+    const data = await res.json();
+    return { configured: true, ok: true, data };
+  } catch (err: unknown) {
+    return { configured: true, ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

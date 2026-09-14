@@ -56,6 +56,8 @@ model Product {
   orderItems         OrderItem[]
 
   @@index([accountId])
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([accountId, category])
   @@map("products")
 }
 
@@ -88,6 +90,8 @@ model Order {
   updatedAt          DateTime      @updatedAt
 
   @@index([accountId])
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([accountId, status])
   @@index([pancakeOrderId])
   @@index([code])
   @@map("orders")

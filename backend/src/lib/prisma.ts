@@ -30,7 +30,7 @@ export async function checkDbAvailability(): Promise<boolean> {
 
   try {
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('DB Timeout')), 50)
+      setTimeout(() => reject(new Error('DB Timeout')), 500)
     );
     await Promise.race([prisma.$queryRaw`SELECT 1`, timeoutPromise]);
     dbAvailable = true;
@@ -38,4 +38,22 @@ export async function checkDbAvailability(): Promise<boolean> {
     dbAvailable = false;
   }
   return dbAvailable;
+}
+
+const verifiedAccounts = new Set<string>();
+
+/**
+ * Đảm bảo Account tồn tại trong DB, cache memory để không phải upsert ở mỗi thao tác CRUD
+ */
+export async function ensureAccountExists(accountId: string): Promise<void> {
+  if (verifiedAccounts.has(accountId)) return;
+
+  try {
+    await prisma.account.upsert({
+      where: { id: accountId },
+      update: {},
+      create: { id: accountId, name: `Cửa hàng (${accountId})` },
+    });
+    verifiedAccounts.add(accountId);
+  } catch (_e) {}
 }

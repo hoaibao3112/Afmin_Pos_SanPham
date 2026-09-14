@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { fetchApi, uploadImageFile } from '@/lib/api';
 import { Product, ProductFormData } from '@/types/product';
-import { compressAndCropImage } from '@/lib/image-compressor';
 import {
   Plus,
   Pencil,
@@ -314,9 +313,23 @@ export default function ProductsPage() {
 
         {/* DANH SÁCH SẢN PHẨM (CARD LIST HIỆN ĐẠI CHO CẢ ĐIỆN THOẠI & MÁY TÍNH) */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
-            <p className="mt-3 text-sm font-medium">Đang tải dữ liệu kho hàng...</p>
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="animate-pulse rounded-2xl border border-slate-200/90 bg-white p-3.5 dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center gap-3.5">
+                  <div className="h-18 w-18 shrink-0 rounded-xl bg-slate-200 dark:bg-slate-700" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-20 rounded bg-slate-200 dark:bg-slate-700" />
+                    <div className="h-4 w-44 rounded bg-slate-200 dark:bg-slate-700" />
+                    <div className="h-3.5 w-28 rounded bg-slate-200 dark:bg-slate-700" />
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <div className="h-10 w-16 rounded-xl bg-slate-200 dark:bg-slate-700" />
+                    <div className="h-10 w-10 rounded-xl bg-slate-200 dark:bg-slate-700" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
@@ -358,6 +371,10 @@ export default function ProductsPage() {
                       <img
                         src={p.imageUrl}
                         alt={p.name}
+                        loading="lazy"
+                        decoding="async"
+                        width={72}
+                        height={72}
                         className="h-full w-full object-cover transition-transform group-hover:scale-105"
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = 'none';

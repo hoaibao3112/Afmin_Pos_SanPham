@@ -1,5 +1,6 @@
 import { prisma, checkDbAvailability } from '../../lib/prisma.js';
 import { getAccountId } from '../../lib/context.js';
+import { env } from '../../config/env.js';
 import { CreateProductInput, UpdateProductInput } from './product.schema.js';
 import { pushProductToPancake, updateProductOnPancake, pullProductsFromPancake } from '../pancake/pancake.service.js';
 import { MOCK_PRODUCTS } from '../../data/mock-data.js';
@@ -342,6 +343,19 @@ export async function deleteProduct(id: string) {
  */
 export async function syncProductsFromPancake() {
   const accountId = getAccountId();
+  const shopId = env.PANCAKE_SHOP_ID;
+  const token = env.PANCAKE_API_TOKEN;
+
+  if (!shopId || !token) {
+    // Khi người dùng chưa có Key POS thật, nạp lại danh sách mẫu để trải nghiệm test mượt mà, không văng lỗi 500
+    inMemoryProducts = [...MOCK_PRODUCTS];
+    return {
+      success: true,
+      message: 'Chưa cấu hình Key POS: Đã nạp thành công 6 sản phẩm mẫu để bạn test chức năng!',
+      count: MOCK_PRODUCTS.length,
+    };
+  }
+
   const rawProducts = await pullProductsFromPancake();
 
   const isDbReady = await checkDbAvailability();

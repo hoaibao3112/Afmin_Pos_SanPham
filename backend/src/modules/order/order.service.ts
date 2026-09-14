@@ -542,7 +542,14 @@ export async function syncOrdersFromPancake() {
   const token = env.PANCAKE_API_TOKEN;
 
   if (!shopId || !token) {
-    throw new Error('Chưa cấu hình PANCAKE_SHOP_ID hoặc PANCAKE_API_TOKEN trong .env');
+    // Khi người dùng chưa có Key POS thật, nạp lại danh sách mẫu để trải nghiệm test mượt mà, không văng lỗi 500
+    inMemoryOrders = [...(MOCK_ORDERS as unknown as InMemoryOrder[])];
+    return {
+      success: true,
+      totalFetched: MOCK_ORDERS.length,
+      syncedCount: MOCK_ORDERS.length,
+      message: 'Chưa cấu hình Key POS: Đã nạp thành công 4 đơn hàng mẫu để bạn test chức năng!',
+    };
   }
 
   const url = `https://pos.pancake.vn/api/v1/shops/${shopId}/orders?api_key=${token}&page_size=30`;

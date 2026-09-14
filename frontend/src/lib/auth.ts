@@ -1,7 +1,7 @@
 export const COOKIE_NAME = 'admin_session';
 
 const DEFAULT_SECRET = 'cam-tuyen-house-super-secret-key-686868-admin-session-2026';
-export const DEFAULT_PIN = '686868';
+export const DEFAULT_PIN = '123123';
 
 export function getAdminPin(): string {
   return process.env.ADMIN_PIN || DEFAULT_PIN;

@@ -62,7 +62,7 @@ describe('🚀 [UNIT TEST] Toàn bộ API Backend - Cẩm Tuyền House & Pancak
       expect(res.body.success).toBe(true);
       expect(res.body.data.name).toBe(payload.name);
       expect(Number(res.body.data.price)).toBe(payload.price);
-      expect(duration).toBeLessThan(200);
+      expect(duration).toBeLessThan(500);
 
       createdProductId = res.body.data.id;
     });

@@ -3,6 +3,7 @@ import { getAccountId } from '../../lib/context.js';
 import { env } from '../../config/env.js';
 import { CreateOrderInput, OrderQueryInput, UpdateOrderStatusInput } from './order.schema.js';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { MOCK_ORDERS } from '../../data/mock-data.js';
 
 /**
  * Tính toán an toàn lại toàn bộ giá trị đơn hàng trên Backend
@@ -17,8 +18,18 @@ function calculateOrderTotals(
   return { subtotal, totalAmount };
 }
 
-// Danh sách đơn hàng (chỉ nhận từ Pancake POS qua Webhook / Sync API hoặc tạo mới, KHÔNG dùng mock data set cứng)
-let inMemoryOrders: any[] = [];
+// Danh sách đơn hàng khởi tạo từ file mock data để test chức năng trước khi có key POS
+let inMemoryOrders: any[] = [...MOCK_ORDERS];
+
+export function resetMockOrders() {
+  inMemoryOrders = [...MOCK_ORDERS];
+  return inMemoryOrders;
+}
+
+export function clearMockOrders() {
+  inMemoryOrders = [];
+  return inMemoryOrders;
+}
 
 /**
  * Lấy danh sách đơn hàng (kèm bộ lọc trạng thái, tìm kiếm, thống kê)

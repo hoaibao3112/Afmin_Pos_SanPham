@@ -56,11 +56,27 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
+import { resetMockProducts, clearMockProducts } from './modules/product/product.service.js';
+import { resetMockOrders, clearMockOrders } from './modules/order/order.service.js';
+
 // 7. Đăng ký API routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/webhooks', webhookRoutes);
+
+// Endpoint điều khiển dữ liệu mẫu để người dùng test chức năng
+app.post('/api/mock/reset', (_req, res) => {
+  resetMockProducts();
+  resetMockOrders();
+  res.json({ success: true, message: 'Đã nạp lại dữ liệu mẫu Cẩm Tuyền House thành công!' });
+});
+
+app.post('/api/mock/clear', (_req, res) => {
+  clearMockProducts();
+  clearMockOrders();
+  res.json({ success: true, message: 'Đã xóa trắng dữ liệu test, sẵn sàng kéo từ POS thật!' });
+});
 
 // 8. Error handling middleware
 app.use(errorHandler);

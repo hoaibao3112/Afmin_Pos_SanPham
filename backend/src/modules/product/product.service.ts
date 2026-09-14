@@ -2,9 +2,20 @@ import { prisma, checkDbAvailability } from '../../lib/prisma.js';
 import { getAccountId } from '../../lib/context.js';
 import { CreateProductInput, UpdateProductInput } from './product.schema.js';
 import { pushProductToPancake, updateProductOnPancake, pullProductsFromPancake } from '../pancake/pancake.service.js';
+import { MOCK_PRODUCTS } from '../../data/mock-data.js';
 
-// Danh sách sản phẩm lưu trữ động (100% từ Pancake POS hoặc tạo từ Admin, KHÔNG dùng dữ liệu set cứng)
-let inMemoryProducts: any[] = [];
+// Danh sách sản phẩm khởi tạo từ file mock data để test chức năng trước khi có key POS
+let inMemoryProducts: any[] = [...MOCK_PRODUCTS];
+
+export function resetMockProducts() {
+  inMemoryProducts = [...MOCK_PRODUCTS];
+  return inMemoryProducts;
+}
+
+export function clearMockProducts() {
+  inMemoryProducts = [];
+  return inMemoryProducts;
+}
 
 /**
  * Lấy danh sách sản phẩm theo accountId (Multi-tenant)

@@ -53,6 +53,7 @@ export default function ProductsPage() {
   const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [compressing, setCompressing] = useState(false);
+  const [syncingPos, setSyncingPos] = useState(false);
 
   // Quản lý Xóa
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
@@ -88,6 +89,24 @@ export default function ProductsPage() {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  // 2. Kéo danh sách sản phẩm trực tiếp từ Pancake POS
+  const handleSyncFromPancake = async () => {
+    setSyncingPos(true);
+    try {
+      const res = await fetchApi<{ success: boolean; message: string; count: number }>(
+        '/api/products/sync-pancake',
+        { method: 'POST' }
+      );
+      showToast('success', res.message || 'Đã đồng bộ sản phẩm từ Pancake POS!');
+      await loadProducts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Chưa cấu hình Pancake Token trong .env';
+      showToast('error', msg);
+    } finally {
+      setSyncingPos(false);
+    }
+  };
 
   // Mở modal thêm mới
   const handleOpenAdd = () => {
@@ -251,17 +270,27 @@ export default function ProductsPage() {
 
           <div className="flex items-center gap-2 shrink-0">
             <button
+              onClick={handleSyncFromPancake}
+              disabled={syncingPos}
+              title="Đọc kéo danh sách sản phẩm từ Pancake POS"
+              className="h-11 px-3.5 rounded-xl border border-blue-200 bg-blue-50/90 hover:bg-blue-100 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300 text-xs font-bold flex items-center gap-1.5 shadow-2xs transition active:scale-95"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncingPos ? 'animate-spin text-blue-600' : ''}`} />
+              <span>{syncingPos ? 'Đang kéo...' : 'Kéo từ POS'}</span>
+            </button>
+
+            <button
               onClick={loadProducts}
               disabled={loading}
-              title="Làm mới"
-              className="h-11 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 transition"
+              title="Làm mới danh sách"
+              className="h-11 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 transition active:scale-95"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-emerald-600' : ''}`} />
               <span className="hidden sm:inline">Tải lại</span>
             </button>
 
-            <span className="h-11 px-3.5 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center">
-              Tổng: {filteredProducts.length} món
+            <span className="h-11 px-3 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center">
+              {filteredProducts.length} món
             </span>
           </div>
         </div>

@@ -167,3 +167,35 @@ export async function updateProductOnPancake(
     return false;
   }
 }
+
+/**
+ * Đọc (kéo) danh sách sản phẩm từ Pancake POS về hệ thống
+ */
+export async function pullProductsFromPancake(): Promise<any[]> {
+  const shopId = env.PANCAKE_SHOP_ID;
+  const token = env.PANCAKE_API_TOKEN;
+
+  if (!shopId || !token) {
+    throw new Error('Chưa cấu hình PANCAKE_SHOP_ID hoặc PANCAKE_API_TOKEN trong .env');
+  }
+
+  // Hỗ trợ cả 2 dạng truyền auth: qua query param api_key và qua Header Bearer
+  const endpoint = `https://pos.pancake.vn/api/v1/shops/${shopId}/products?api_key=${token}&page_size=50`;
+
+  const response = await fetchWithRetry(endpoint, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Lỗi kết nối Pancake POS (${response.status}): ${errorText}`);
+  }
+
+  const resJson = (await response.json()) as any;
+  // Pancake có thể trả data dạng { data: [...] } hoặc { products: [...] }
+  return resJson.data || resJson.products || [];
+}

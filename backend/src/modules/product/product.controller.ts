@@ -98,3 +98,12 @@ export async function deleteProductHandler(req: Request, res: Response, next: Ne
     next(err);
   }
 }
+
+export async function syncProductsFromPancakeHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await productService.syncProductsFromPancake();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}

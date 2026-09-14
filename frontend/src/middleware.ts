@@ -4,6 +4,16 @@ import { COOKIE_NAME, verifySessionToken } from '@/lib/auth';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Bỏ qua tuyệt đối toàn bộ file nội bộ Next.js (bao gồm _next/webpack-hmr), API auth và file tĩnh
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api/auth') ||
+    pathname === '/favicon.ico' ||
+    pathname.includes('.')
+  ) {
+    return NextResponse.next();
+  }
+
   // Lấy cookie session
   const sessionCookie = req.cookies.get(COOKIE_NAME)?.value;
   const session = sessionCookie ? await verifySessionToken(sessionCookie) : null;
@@ -28,12 +38,12 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Áp dụng middleware cho tất cả các đường dẫn TRỪ:
-     * - _next/static, _next/image
-     * - favicon.ico, sitemap.xml, robots.txt
-     * - Các file tĩnh trong public (.svg, .png, .jpg, .webp, .ico)
-     * - API routes xác thực (/api/auth/login, /api/auth/logout)
+     * Bỏ qua tất cả các file hệ thống và file tĩnh:
+     * - api/auth (đăng nhập / đăng xuất)
+     * - _next (bao gồm _next/static, _next/image, _next/webpack-hmr)
+     * - favicon.ico
+     * - Tất cả file có đuôi mở rộng (.jpg, .png, .svg, .js, .css, ...)
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/auth|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!api/auth|_next|favicon\\.ico|.*\\.[\\w]+$).*)',
   ],
 };

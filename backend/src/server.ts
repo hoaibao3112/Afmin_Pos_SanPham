@@ -82,7 +82,7 @@ app.post('/api/mock/clear', (_req, res) => {
 app.use(errorHandler);
 
 const PORT = Number(env.PORT) || 5000;
-let server: any = null;
+let server: import('node:http').Server | null = null;
 
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(PORT, () => {

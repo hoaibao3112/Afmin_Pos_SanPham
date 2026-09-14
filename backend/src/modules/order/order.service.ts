@@ -2,8 +2,76 @@ import { prisma, checkDbAvailability } from '../../lib/prisma.js';
 import { getAccountId } from '../../lib/context.js';
 import { env } from '../../config/env.js';
 import { CreateOrderInput, OrderQueryInput, UpdateOrderStatusInput } from './order.schema.js';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { MOCK_ORDERS } from '../../data/mock-data.js';
+
+export interface InMemoryOrderItem {
+  id?: string;
+  orderId?: string;
+  productId?: string | null;
+  productName: string;
+  productImage?: string | null;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface InMemoryOrder {
+  id: string;
+  accountId: string;
+  code: string;
+  customerName: string;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
+  customerNote?: string | null;
+  paymentMethod: string;
+  shippingFee: number;
+  discount: number;
+  subtotal: number;
+  totalAmount: number;
+  pancakeOrderId?: string | null;
+  source: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  items: InMemoryOrderItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PancakeRawItem {
+  id?: string | number;
+  product_name?: string;
+  name?: string;
+  avatar_url?: string;
+  image_url?: string;
+  quantity?: number;
+  price?: number;
+  retail_price?: number;
+}
+
+export interface PancakeRawOrder {
+  id?: string | number;
+  order_id?: string | number;
+  bill_full_name?: string;
+  customer?: { name?: string; phone_number?: string; address?: string };
+  shipping_address?: { full_name?: string; phone_number?: string; full_address?: string; address?: string };
+  bill_phone_number?: string;
+  customer_note?: string;
+  note?: string;
+  items?: PancakeRawItem[];
+  order_items?: PancakeRawItem[];
+  variations?: PancakeRawItem[];
+  shipping_fee?: number;
+  discount?: number;
+  bill_code?: string;
+  status?: string;
+  is_paid?: boolean;
+}
+
+export interface PancakeOrdersApiResponse {
+  data?: PancakeRawOrder[];
+  orders?: PancakeRawOrder[];
+}
 
 /**
  * Tính toán an toàn lại toàn bộ giá trị đơn hàng trên Backend
@@ -19,10 +87,10 @@ function calculateOrderTotals(
 }
 
 // Danh sách đơn hàng khởi tạo từ file mock data để test chức năng trước khi có key POS
-let inMemoryOrders: any[] = [...MOCK_ORDERS];
+let inMemoryOrders: InMemoryOrder[] = [...(MOCK_ORDERS as unknown as InMemoryOrder[])];
 
 export function resetMockOrders() {
-  inMemoryOrders = [...MOCK_ORDERS];
+  inMemoryOrders = [...(MOCK_ORDERS as unknown as InMemoryOrder[])];
   return inMemoryOrders;
 }
 
@@ -41,7 +109,7 @@ export async function listOrders(query: OrderQueryInput) {
   const skip = (page - 1) * limit;
 
   try {
-    const whereClause: any = { accountId };
+    const whereClause: Prisma.OrderWhereInput = { accountId };
 
     if (query.status && query.status !== 'ALL') {
       whereClause.status = query.status as OrderStatus;
@@ -297,7 +365,7 @@ export async function updateOrderStatus(id: string, data: UpdateOrderStatusInput
  * Tiếp nhận đơn hàng từ Pancake POS (qua Webhook hoặc kéo API)
  * Xử lý IDEMPOTENCY: Nếu đơn đã có pancakeOrderId trong CSDL thì cập nhật chứ không sinh đơn trùng
  */
-export async function ingestPancakeOrder(rawOrder: any) {
+export async function ingestPancakeOrder(rawOrder: PancakeRawOrder) {
   const accountId = getAccountId();
 
   if (!rawOrder) return null;
@@ -324,8 +392,8 @@ export async function ingestPancakeOrder(rawOrder: any) {
   const customerNote = rawOrder.customer_note || rawOrder.note || null;
 
   // Lấy danh sách mặt hàng
-  const rawItems = rawOrder.items || rawOrder.order_items || rawOrder.variations || [];
-  const items = rawItems.map((item: any) => {
+  const rawItems: PancakeRawItem[] = rawOrder.items || rawOrder.order_items || rawOrder.variations || [];
+  const items: InMemoryOrderItem[] = rawItems.map((item: PancakeRawItem) => {
     const quantity = Math.max(1, Number(item.quantity || 1));
     const price = Number(item.price || item.retail_price || 0);
     return {
@@ -401,7 +469,7 @@ export async function ingestPancakeOrder(rawOrder: any) {
           subtotal,
           totalAmount,
           items: {
-            create: items.map((it: any) => ({
+            create: items.map((it: InMemoryOrderItem) => ({
               productName: it.productName,
               productImage: it.productImage,
               quantity: it.quantity,
@@ -433,7 +501,7 @@ export async function ingestPancakeOrder(rawOrder: any) {
     return existingMem;
   }
 
-  const newMemOrder = {
+  const newMemOrder: InMemoryOrder = {
     id: `ord_pos_${Date.now()}`,
     accountId,
     code,
@@ -452,7 +520,7 @@ export async function ingestPancakeOrder(rawOrder: any) {
     totalAmount,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    items: items.map((it: any, idx: number) => ({
+    items: items.map((it: InMemoryOrderItem, idx: number) => ({
       id: `item_pos_${Date.now()}_${idx}`,
       orderId: `ord_pos_${Date.now()}`,
       productName: it.productName,
@@ -487,8 +555,8 @@ export async function syncOrdersFromPancake() {
     throw new Error(`Lỗi kết nối Pancake POS: ${response.statusText}`);
   }
 
-  const result = (await response.json()) as any;
-  const rawOrders = result.data || result.orders || [];
+  const result = (await response.json()) as PancakeOrdersApiResponse;
+  const rawOrders: PancakeRawOrder[] = result.data || result.orders || [];
 
   let syncedCount = 0;
   for (const raw of rawOrders) {

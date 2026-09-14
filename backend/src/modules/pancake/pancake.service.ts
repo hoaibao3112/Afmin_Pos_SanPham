@@ -38,6 +38,49 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 2, ti
   throw new Error('Đã thử gọi API Pancake POS nhiều lần nhưng không thành công');
 }
 
+export interface PancakeVariation {
+  id?: string | number;
+  name?: string;
+  title?: string;
+  sku?: string;
+  display_id?: string;
+  retail_price?: number;
+  original_price?: number;
+  remain_quantity?: number;
+  stock?: number;
+  images?: string[];
+  warehouse_stocks?: Array<{ warehouse_id: number; quantity: number }>;
+}
+
+export interface PancakeRawProduct {
+  id?: string | number;
+  name?: string;
+  title?: string;
+  description?: string;
+  category_name?: string;
+  category?: { name?: string };
+  display_id?: string;
+  sku?: string;
+  retail_price?: number;
+  price?: number;
+  stock?: number;
+  images?: string[];
+  variations?: PancakeVariation[];
+}
+
+export interface PancakePushResponse {
+  message?: string;
+  product?: {
+    id?: string | number;
+    variations?: Array<{ id?: string | number }>;
+  };
+}
+
+export interface PancakeProductListApiResponse {
+  data?: PancakeRawProduct[];
+  products?: PancakeRawProduct[];
+}
+
 /**
  * Đẩy tạo sản phẩm mới sang Pancake POS
  */
@@ -92,7 +135,7 @@ export async function pushProductToPancake(product: SyncProductToPancakeInput): 
     body: JSON.stringify(payload),
   });
 
-  const responseData = (await response.json()) as any;
+  const responseData = (await response.json()) as PancakePushResponse;
 
   if (!response.ok) {
     const errorDetail = responseData?.message || JSON.stringify(responseData);
@@ -127,11 +170,13 @@ export async function updateProductOnPancake(
   try {
     const endpoint = `https://pos.pancake.vn/api/v1/shops/${shopId}/products/${pancakeProductId}`;
 
-    const payload: Record<string, any> = {
-      product: {
-        ...(product.name && { name: product.name }),
-        ...(product.description !== undefined && { description: product.description }),
-      },
+    const updateProductData: Record<string, unknown> = {
+      ...(product.name && { name: product.name }),
+      ...(product.description !== undefined && { description: product.description }),
+    };
+
+    const payload: { product: Record<string, unknown> } = {
+      product: updateProductData,
     };
 
     // Nếu có biến thể & giá/kho cập nhật
@@ -171,7 +216,7 @@ export async function updateProductOnPancake(
 /**
  * Đọc (kéo) danh sách sản phẩm từ Pancake POS về hệ thống
  */
-export async function pullProductsFromPancake(): Promise<any[]> {
+export async function pullProductsFromPancake(): Promise<PancakeRawProduct[]> {
   const shopId = env.PANCAKE_SHOP_ID;
   const token = env.PANCAKE_API_TOKEN;
 
@@ -195,7 +240,7 @@ export async function pullProductsFromPancake(): Promise<any[]> {
     throw new Error(`Lỗi kết nối Pancake POS (${response.status}): ${errorText}`);
   }
 
-  const resJson = (await response.json()) as any;
+  const resJson = (await response.json()) as PancakeProductListApiResponse;
   // Pancake có thể trả data dạng { data: [...] } hoặc { products: [...] }
   return resJson.data || resJson.products || [];
 }

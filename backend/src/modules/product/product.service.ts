@@ -4,8 +4,29 @@ import { CreateProductInput, UpdateProductInput } from './product.schema.js';
 import { pushProductToPancake, updateProductOnPancake, pullProductsFromPancake } from '../pancake/pancake.service.js';
 import { MOCK_PRODUCTS } from '../../data/mock-data.js';
 
+import { Product } from '@prisma/client';
+
+export interface InMemoryProduct {
+  id: string;
+  accountId: string;
+  name: string;
+  category: string;
+  description?: string | null;
+  price: number | string | { toString(): string };
+  stock: number;
+  imageUrl?: string | null;
+  sku?: string | null;
+  pancakeProductId?: string | null;
+  pancakeVariationId?: string | null;
+  isSyncedToPos: boolean;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+export type ProductItem = Product | InMemoryProduct;
+
 // Danh sách sản phẩm khởi tạo từ file mock data để test chức năng trước khi có key POS
-let inMemoryProducts: any[] = [...MOCK_PRODUCTS];
+let inMemoryProducts: InMemoryProduct[] = [...MOCK_PRODUCTS];
 
 export function resetMockProducts() {
   inMemoryProducts = [...MOCK_PRODUCTS];
@@ -65,7 +86,7 @@ export async function createProduct(data: CreateProductInput) {
   const sku = `CTH-${Date.now().toString().slice(-6)}`;
   const isDbReady = await checkDbAvailability();
 
-  let newProduct: any;
+  let newProduct: ProductItem | null = null;
 
   if (isDbReady) {
     try {

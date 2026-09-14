@@ -1,11 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Store, Package, ReceiptText } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Store, Package, ReceiptText, LogOut } from 'lucide-react';
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  if (pathname === '/login') {
+    return null;
+  }
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (_err) {}
+    router.replace('/login');
+    router.refresh();
+  };
 
   const isProducts = pathname.startsWith('/products');
   const isOrders = pathname.startsWith('/orders');
@@ -49,6 +62,15 @@ export default function Navbar() {
             <ReceiptText className="h-3.5 w-3.5" />
             <span>Đơn hàng</span>
           </Link>
+
+          {/* Nút Đăng xuất */}
+          <button
+            onClick={handleLogout}
+            title="Đăng xuất / Khóa màn hình"
+            className="flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition active:scale-90 cursor-pointer"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
         </nav>
       </div>
     </header>

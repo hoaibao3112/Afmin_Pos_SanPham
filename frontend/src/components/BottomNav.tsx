@@ -7,6 +7,10 @@ import { Package, Plus, ReceiptText } from 'lucide-react';
 export default function BottomNav() {
   const pathname = usePathname();
 
+  if (pathname === '/login') {
+    return null;
+  }
+
   const isProducts = pathname === '/products';
   const isOrders = pathname.startsWith('/orders');
   const isNewProduct = pathname === '/products/new';
